@@ -1,14 +1,16 @@
 [ {
-  "examID" : 555,
-  "name" : "opp",
-  "type" : "test"
+  "examId" : "777",
+  "name" : "oop",
+  "type" : "test",
+  "dateCreated" : "2021-09-27",
+  "numberOfQuestions" : 3
 }, [ {
-  "klausimas" : 0,
-  "atsakymas" : "a"
+  "answerNr" : 0,
+  "answer_text" : "a"
 }, {
-  "klausimas" : 1,
-  "atsakymas" : "b"
+  "answerNr" : 1,
+  "answer_text" : "b"
 }, {
-  "klausimas" : 2,
-  "atsakymas" : "c"
+  "answerNr" : 2,
+  "answer_text" : "c"
 } ] ]

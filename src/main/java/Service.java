@@ -1,27 +1,34 @@
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
-import org.w3c.dom.ls.LSOutput;
 
 import java.io.File;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.stream.Collectors;
 
 public class Service {
-    Map<Integer, Student> mapStudents = new HashMap();
+    Map<String, Student> mapStudents = new HashMap();
     Scanner sc = new Scanner(System.in);
     List<Answer> answers = new ArrayList<>();
     List<Question> examQuestions = new ArrayList<>();
     Map<Student, List<Answer>> studentAnswerMap = new HashMap<>();
     Exam exam = new Exam();
+    Map<String, Exam> examMap = new HashMap<>();
     private int numberOfQuestions = 0;
     List<Result> resultList = new ArrayList<>();
-    LocalDateTime time;
+//    String tempLogin = "";
 
-    public void menu() {
+    LocalDateTime time1 = null;
+    String time = convertTime(time1);
+
+    PostgreConnection postgreConnection = new PostgreConnection();
+
+    public void menu() throws SQLException {
         File directory = new File("Catalogue");
         if (!directory.exists()) {
             try {
@@ -68,18 +75,18 @@ public class Service {
                 case "1" -> {
                     System.out.println(" ___________________________");
                     System.out.println("| [1] create" + Enums.EXAM + "           |");
-                    System.out.println("| [2] student's results    |");
-                    System.out.println("| [3] go to main menu      |");
-                    System.out.println("|__________________________|");
+                    System.out.println("| [2] student's results     |");
+                    System.out.println("| [3] go to main menu       |");
+                    System.out.println("|___________________________|");
                     String input1 = sc.next();
                     switch (input1) {
                         case "1" -> {
-                            registerExam();
-                            System.out.println("Enter number of questions:");
-                            numberOfQuestions = getValidNumber();
-                            createQuestions();
-                            createAnswers();
+                            String examCode = getUniqueID("examCode", "exams");
+                            registerExam(examCode);
+                            createQuestions(1);
+                            createAnswers(1, examCode);
                             generateAnswerFile(exam, answersFile);
+
                         }
                         case "2" -> {
                             sort(resultList);
@@ -99,7 +106,7 @@ public class Service {
                 }
                 case "4" -> {
                     logIN();
-                    LocalDateTime newTime = time.plusDays(2);
+                    LocalDateTime newTime = time1.plusDays(2);
                     LocalDateTime timeNow = LocalDateTime.now();
                     if (timeNow.isAfter(newTime)) {
                         takeExam(studentAnswersFile);
@@ -115,8 +122,8 @@ public class Service {
         } while (true);
     }
 
-    public void registerStudent() {
-        int id = getUniqueID();
+    public void registerStudent() throws SQLException {
+        String id = getUniqueID("login", "students");
         System.out.println(registerStudentByID(id).toString());
         System.out.println("Number of students registered = " + mapStudents.size());
     }
@@ -133,6 +140,7 @@ public class Service {
             e.printStackTrace();
         }
     }
+
     public void generateAnswerFile(Exam exam, File name, Map<Student, List<Answer>> studentAnswerMap) {
         List<Object> list = new ArrayList<>();
         list.add(exam);
@@ -159,27 +167,39 @@ public class Service {
         }
     }
 
-    public Student registerStudentByID(int id) {
+    public Student registerStudentByID(String login) throws SQLException {
         System.out.println("Enter your name: ");
         String name = sc.next();
         System.out.println("Enter your surname:");
         String surname = sc.next();
-        Student student = new Student(id, name, surname);
-        mapStudents.put(id, student);
+        System.out.println("Enter you classId:");
+        String classId = sc.next();
+        Student student = new Student(classId, login, name, surname);
+        mapStudents.put(login, student);
+        try {
+            postgreConnection.registerStudent_DB(student, 1);
+        } catch (Exception e) {
+            System.out.println("something went wrong, try again");
+            menu();
+        }
         System.out.println("Registration successful");
         return student;
     }
 
-    public int getUniqueID() {
-        int id = 0;
+    public String getUniqueID(String column_name, String table_name) throws SQLException {
+        String id = "";
         do {
-            int idCheck = getValidNumber();
-            if (mapStudents.get(idCheck) == null) {
-                id = idCheck;
+            System.out.println("Enter ID:");
+            String loginID = sc.next();
+            ResultSet resultSet = postgreConnection.findInfo(loginID, column_name, table_name);
+            //checking if this id exists in DB
+            if (!resultSet.next()) {
+                id = loginID;
             } else {
-                System.out.println("This ID already exists, please check your ID number and try again");
+                System.out.println("This ID already exists, please check ID number and try again");
+                id = "";
             }
-        } while (id == 0);
+        } while (id.equals(""));
         return id;
     }
 
@@ -196,8 +216,8 @@ public class Service {
         return idCheck;
     }
 
-    public void logIN() {
-        int logIDCheck = getValidNumber();
+    public void logIN() throws SQLException {
+        String logIDCheck = getLogInId(mapStudents);
         if (mapStudents.get(logIDCheck) != null) {
             System.out.println("Login is successful");
             System.out.println(mapStudents.get(logIDCheck).toString());
@@ -206,53 +226,62 @@ public class Service {
             menu();
         }
     }
-    public int getLogInId() {
-        int getLogInId = getValidNumber();
-        if (mapStudents.get(getLogInId) != null) {
+
+    public <T> String getLogInId(Map<String, T> object) throws SQLException {
+        System.out.println("Enter your ID:");
+        String id = sc.next();
+        ResultSet resultSet = postgreConnection.findInfo(id, "examcode", "exams");
+        if (resultSet.next()) {
             System.out.println("Login is successful");
-            System.out.println(mapStudents.get(getLogInId).toString());
-            return getLogInId;
+            return id;
         } else {
             System.out.println("Please check your ID or register.");
             menu();
-            return 0;
+            return null;
         }
     }
 
-    public void startExam(Student student) {
+    public void startExam(Student student) throws SQLException {
         List<Answer> list = new ArrayList<>();
-        for (int i = 0; i < numberOfQuestions; i++) {
-            System.out.println(examQuestions.get(i));
+        System.out.println("Enter examID:");
+        String examId = sc.next();
+        ResultSet resultSet = postgreConnection.findInfo(examId, "question_text", "questions");
+        int i = 0;
+        while (i == numberOfQuestions) {
+            System.out.println(resultSet.getString("question_text"));
             System.out.println("Press [a], [b], [c], [d], or [e]:");
             String answer = sc.next();
             if (answer.equals("a") || answer.equals("b") || answer.equals("c") || answer.equals("d") || answer.equals("e")) {
                 list.add(new Answer(i, answer));
+                i++;
             } else {
                 System.out.println("Something went wrong, try again.");
-                i--;
+                menu();
             }
         }
-
         studentAnswerMap.put(student, list);
         int score = 0;
-        for (int i = 0; i < answers.size(); i++) {
-            if (list.get(i).getAtsakymas().equals(answers.get(i).getAtsakymas())) {
+        for (int a = 0; a < answers.size(); a++) {
+            if (list.get(a).getAnswer_text().equals(answers.get(a).getAnswer_text())) {
                 score++;
             }
         }
-        BigDecimal result = new BigDecimal((double) score * 100 / numberOfQuestions).setScale(0, RoundingMode.HALF_UP);
-        System.out.println("Your scour is " + score + " out of " + numberOfQuestions + ". That is = " + result + "%");
-        double mark = Integer.parseInt(String.valueOf(result)) / 10;
-        int studentScour = (int) Math.round(mark);
-        resultList.add(new Result(student,studentScour));
+        BigDecimal result = BigDecimal.valueOf((double) score * 100 / 3).setScale(0, RoundingMode.HALF_UP);
+        System.out.println("Your scour is " + score + " out of " + 3 + ". That is = " + result + "%");
+        int mark = Integer.parseInt(String.valueOf(result)) / 10;
+        int studentScour = (int) Math.round(mark + 0.5);
+        resultList.add(new Result(student, studentScour, time));
+        postgreConnection.registerResults_DB(student,exam,studentScour,time);
     }
 
-    public void createAnswers() {
+    public void createAnswers(int examId_DB, String examCode) {
         for (int i = 0; i < numberOfQuestions; i++) {
             System.out.println("Enter answer for question nr. " + (i + 1) + ". Enter [a], [b], [c], [d], or [e]");
             String answer = sc.next();
             if (answer.equals("a") || answer.equals("b") || answer.equals("c") || answer.equals("d") || answer.equals("e")) {
-                answers.add(new Answer(i, answer));
+                Answer rightAnswer = new Answer(i, answer);
+                answers.add(rightAnswer);
+                postgreConnection.registerAnswers_DB(rightAnswer, exam, examId_DB, (i + 1));
             } else {
                 System.out.println("Something went wrong, try again.");
                 i--;
@@ -261,20 +290,23 @@ public class Service {
         System.out.println(Enums.EXAM + " file was created successful");
     }
 
-    public void registerExam() {
-        System.out.println("Enter " + Enums.EXAM + "'s ID number:");
-        int number = getValidNumber();
+    public void registerExam(String examCode) {
         System.out.println("Enter " + Enums.EXAM + "'s name: ");
         String name = sc.next();
         System.out.println("Enter " + Enums.EXAM + "'s type:");
         String type = sc.next();
-        exam = new Exam(number, name, type);
+        exam = new Exam(examCode, name, type, convertTime(LocalDateTime.now()), numberOfQuestions);
+        examMap.put(examCode, exam);
         System.out.println(exam.toString());
         System.out.println(Enums.EXAM + " registered successful");
     }
 
-    public void createQuestions() {
+    public void createQuestions(int examID_DB) {
         Scanner newScanner = new Scanner(System.in);
+        System.out.println("Enter number of questions:");
+        numberOfQuestions = getValidNumber();
+        exam.setNumberOfQuestions(numberOfQuestions);
+        postgreConnection.registerExam_DB(exam);
         for (int i = 0; i < numberOfQuestions; i++) {
             System.out.println("Please enter question nr. " + (i + 1) + ":");
             String question = newScanner.nextLine();
@@ -302,27 +334,38 @@ public class Service {
             String answer3 = newScanner.nextLine();
             String answerE = "";
             if (answer3.equals("x")) {
-                answerC = null;
+                answerE = null;
             } else {
-                answerC = answer3;
+                answerE = answer3;
             }
-            examQuestions.add(new Question(i, question, answerA, answerB, answerC, answerD, answerE));
+            Question question1 = new Question((i + 1), question, answerA, answerB, answerC, answerD, answerE);
+            examQuestions.add(question1);
+            postgreConnection.registerQuestions_DB(question1, examID_DB);
         }
         System.out.println("Questions registered");
     }
 
-    public void takeExam(File resultFile) {
-        int key = getLogInId();
+    public void takeExam(File resultFile) throws SQLException {
+        String key = getLogInId(mapStudents);
         Student myStudent = mapStudents.get(key);
         startExam(myStudent);
         generateAnswerFile(exam, resultFile, studentAnswerMap);
-        time = LocalDateTime.now();
+        time1 = LocalDateTime.now();
     }
 
-    public void sort (List<Result> resultList){
-       resultList.stream()
+    public void sort(List<Result> resultList) {
+        resultList.stream()
                 .mapToInt(Result::getScour)
                 .max();
         System.out.println(resultList.toString());
+    }
+
+    public static String convertTime(LocalDateTime time) {
+        if (time != null) {
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+            return time.format(formatter);
+        } else {
+            return null;
+        }
     }
 }

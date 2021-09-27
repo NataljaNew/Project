@@ -1,5 +1,6 @@
 import org.junit.jupiter.api.Test;
 
+import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -9,9 +10,9 @@ class ServiceTest {
 
 
     @Test
-    void registerStudentByID() {
+    void registerStudentByID() throws SQLException {
         Service service = new Service();
-        service.registerStudentByID(1);
+        service.registerStudentByID("1");
         int expected = 1;
         //int result =
     }
